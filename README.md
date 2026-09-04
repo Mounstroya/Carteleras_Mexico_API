@@ -1,8 +1,9 @@
-# cines-mcp
+# Carteleras Mexico API
 
-Servidor MCP con horarios de Cinepolis y Cinemex (Mexico), armado a partir
-de las APIs internas de cada sitio (encontradas revisando HARs, no scraping
-de HTML).
+Cliente en Python para las APIs de cartelera/horarios de **Cinepolis** y
+**Cinemex** en Mexico: cartelera de peliculas, catalogo de cines con
+ubicacion, y horarios por cine. Se puede usar como libreria en cualquier
+script o proyecto, o exponerse via MCP para que un agente de IA lo llame.
 
 ## Setup
 
@@ -11,36 +12,39 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-## Probar sin un agente (a mano)
+## Usar como libreria
 
-```bash
-.venv/bin/python -c "
-from cinemex_api import find_showtimes_near
-print(find_showtimes_near('spider-man', lat=19.4256, lng=-99.154789, n_cinemas=3))
-"
+```python
+from cinemex_api import find_showtimes_near as cinemex_near
+from cinepolis_api import find_showtimes_near as cinepolis_near
+
+cinemex_near("spider-man", lat=19.4256, lng=-99.154789, n_cinemas=3)
+cinepolis_near("coyote vs acme", lat=19.335388, lng=-99.157622, n_cinemas=3)
 ```
 
-## Conectarlo a un agente por MCP
+Cada modulo (`cinepolis_api.py`, `cinemex_api.py`) tambien expone funciones
+por separado si solo necesitas una parte: `get_cinemas()`, `get_movies()`,
+`find_movie()`, `nearest_cinemas()`, etc.
 
-El servidor habla stdio. En cualquier cliente MCP (Claude Desktop, openclaw,
-etc.) se registra apuntando al python del venv y a `server.py`, por ejemplo:
+## Usar via MCP
+
+`server.py` expone las mismas busquedas como tools MCP, para que un agente
+de IA (Claude Desktop, openclaw, o cualquier cliente MCP) las llame directo
+sin tener que escribir codigo. El servidor habla stdio; se registra
+apuntando al python del venv y a `server.py`:
 
 ```json
 {
   "mcpServers": {
     "cines-mx": {
-      "command": "/home/yaelmontoya/cines-mcp/.venv/bin/python",
-      "args": ["/home/yaelmontoya/cines-mcp/server.py"]
+      "command": "/ruta/a/Carteleras_Mexico_API/.venv/bin/python",
+      "args": ["/ruta/a/Carteleras_Mexico_API/server.py"]
     }
   }
 }
 ```
 
-(La ruta exacta de configuracion depende de donde openclaw lea su lista de
-servidores MCP; el bloque de arriba es el formato estandar que usan la
-mayoria de los clientes.)
-
-## Tools expuestas
+Tools expuestas:
 
 - `buscar_horarios_cinepolis(pelicula, lat, lng, n_cines=5)`
 - `buscar_horarios_cinemex(pelicula, lat, lng, fecha=None, n_cines=5)`
@@ -52,8 +56,9 @@ mayoria de los clientes.)
 - Ambas APIs son "publicas de cliente": la llave (`x-apikey` en Cinepolis,
   `X-API-Consumer-Key` en Cinemex) viene embebida en el JS de cada sitio, no
   es un token de sesion de usuario. Si algun dia dejan de responder, lo mas
-  probable es que rotaron la llave — hay que capturar un `.har` nuevo
-  navegando el sitio y actualizar la constante en el archivo correspondiente.
+  probable es que rotaron la llave — hay que revisar las peticiones de red
+  del sitio (pestana Network del navegador) y actualizar la constante en el
+  archivo correspondiente.
 - La distancia a los cines es linea recta (haversine), no tiempo de manejo.
 - La lista de cines/ciudades se cachea en disco (`cache_*.json`) por ~1
   semana para no pedirla en cada llamada.
