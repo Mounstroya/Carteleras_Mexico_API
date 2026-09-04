@@ -19,6 +19,22 @@ from typing import Any
 
 import requests
 
+
+def _load_dotenv(path: Path) -> None:
+    """Carga KEY=VALUE de un .env local a os.environ, sin pisar variables
+    que ya esten definidas (ej. por el entorno real)."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv(Path(__file__).parent / ".env")
+
 API_URL = "https://api-g.cinepolis.com"
 API_KEY = "lQM6Mkvri1iHksKKCfpAiwGXq0YUZA7Nn6XAXRPr4i13LwXo"
 

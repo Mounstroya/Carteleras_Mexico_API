@@ -70,6 +70,28 @@ horarios de cine. Instalarlo:
 cp -r skills/cartelera-mx ~/.openclaw/skills/
 ```
 
+## Relay opcional para Cinepolis (IPs de datacenter bloqueadas)
+
+Cinepolis usa Cloudflare y a veces bloquea IPs de proveedores cloud/hosting
+con un 403 "Attention Required" (le pasa, por ejemplo, a instancias de
+Oracle Cloud). Si corres esto en un servidor asi, `cinepolis_api.py` puede
+enrutar sus llamadas por un relay HTTP corriendo en una IP residencial en
+vez de pegarle directo a la API.
+
+Se activa solo si defines estas dos variables (ver `.env.example`, copialo
+a `.env` en la raiz del proyecto — ya esta en `.gitignore`):
+
+```bash
+CINEPOLIS_RELAY_URL=http://tu-ip-residencial:8794
+CINEPOLIS_RELAY_TOKEN=<token compartido con el relay>
+```
+
+Sin esas variables, el comportamiento es identico al de siempre (llamada
+directa). El codigo del relay (Flask + gunicorn en Docker, reenvia
+unicamente a `api-g.cinepolis.com`, valida cada request con
+`X-Worker-Token` via `hmac.compare_digest`) no vive en este repo — es
+infraestructura personal, no parte de la libreria.
+
 ## Notas / limitaciones
 
 - Ambas APIs son "publicas de cliente": la llave (`x-apikey` en Cinepolis,
