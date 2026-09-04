@@ -8,6 +8,8 @@ Ejemplos:
     python cli.py "coyote vs acme" --lat 19.335 --lng -99.157 --cadena cinepolis
     python cli.py "spider-man" --lat 19.4256 --lng -99.154789 --fecha 2026-09-05 --json
 """
+from __future__ import annotations
+
 import argparse
 import json
 
