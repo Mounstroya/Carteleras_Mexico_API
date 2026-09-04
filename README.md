@@ -26,6 +26,15 @@ Cada modulo (`cinepolis_api.py`, `cinemex_api.py`) tambien expone funciones
 por separado si solo necesitas una parte: `get_cinemas()`, `get_movies()`,
 `find_movie()`, `nearest_cinemas()`, etc.
 
+## Usar por CLI
+
+```bash
+.venv/bin/python cli.py "spider-man" --lat 19.4256 --lng -99.154789 --json
+```
+
+Ver `python cli.py --help` para filtrar por cadena, fecha, o numero de cines
+cercanos a revisar.
+
 ## Usar via MCP
 
 `server.py` expone las mismas busquedas como tools MCP, para que un agente
@@ -50,6 +59,16 @@ Tools expuestas:
 - `buscar_horarios_cinemex(pelicula, lat, lng, fecha=None, n_cines=5)`
 - `buscar_horarios(pelicula, lat, lng, fecha=None, n_cines=5)` — busca en
   ambas cadenas y regresa todo junto ordenado por distancia.
+
+## Skill para OpenClaw
+
+`skills/cartelera-mx/` trae un skill de [OpenClaw](https://github.com/openclaw/openclaw)
+que le enseña al agente a usar `cli.py` cuando el usuario pregunte por
+horarios de cine. Instalarlo:
+
+```bash
+cp -r skills/cartelera-mx ~/.openclaw/skills/
+```
 
 ## Notas / limitaciones
 
