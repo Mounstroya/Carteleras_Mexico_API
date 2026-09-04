@@ -80,6 +80,9 @@ Opciones utiles:
 - Los showtimes de Cinepolis traen `format` (2D/3D) y `language`
   (ESPAÑOL/SUBTITULADA). Los de Cinemex traen `version` (ya combina idioma +
   formato en un solo texto, ej. "Premium Subtitulada").
+- Si una cadena fallo (red, bloqueo, etc.), viene como `cinepolis_error` /
+  `cinemex_error` en vez de `_match`, y esa cadena simplemente no aporta
+  cines a la lista — la otra cadena sigue funcionando normal.
 
 ## Workflow al responder al usuario
 
@@ -98,4 +101,7 @@ Opciones utiles:
   rotaron la llave; hay que actualizar `cinepolis_api.py`/`cinemex_api.py`
   (ver notas en el README del repo).
 - La distancia es linea recta (haversine), no tiempo de manejo.
+- Cinepolis usa Cloudflare y a veces bloquea IPs de proveedores cloud/hosting
+  (403 "Attention Required"). Si eso pasa, no lo trates como bug — `cli.py`
+  ya lo maneja devolviendo `cinepolis_error` y sigue con Cinemex.
 - Repo: https://github.com/Mounstroya/Carteleras_Mexico_API

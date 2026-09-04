@@ -21,16 +21,22 @@ def buscar(movie: str, lat: float, lng: float, cadena: str, fecha: str | None, n
     resultado: dict = {"pelicula_buscada": movie, "cines": []}
 
     if cadena in ("todas", "cinepolis"):
-        r = cinepolis_api.find_showtimes_near(movie, lat, lng, n_cinemas=n)
-        resultado["cinepolis_match"] = r.get("movie")
-        for c in r.get("cinemas", []):
-            resultado["cines"].append({**c, "cadena": "Cinepolis"})
+        try:
+            r = cinepolis_api.find_showtimes_near(movie, lat, lng, n_cinemas=n)
+            resultado["cinepolis_match"] = r.get("movie")
+            for c in r.get("cinemas", []):
+                resultado["cines"].append({**c, "cadena": "Cinepolis"})
+        except Exception as e:
+            resultado["cinepolis_error"] = str(e)
 
     if cadena in ("todas", "cinemex"):
-        r = cinemex_api.find_showtimes_near(movie, lat, lng, target_date=fecha, n_cinemas=n)
-        resultado["cinemex_match"] = r.get("movie")
-        for c in r.get("cinemas", []):
-            resultado["cines"].append({**c, "cadena": "Cinemex"})
+        try:
+            r = cinemex_api.find_showtimes_near(movie, lat, lng, target_date=fecha, n_cinemas=n)
+            resultado["cinemex_match"] = r.get("movie")
+            for c in r.get("cinemas", []):
+                resultado["cines"].append({**c, "cadena": "Cinemex"})
+        except Exception as e:
+            resultado["cinemex_error"] = str(e)
 
     resultado["cines"].sort(key=lambda c: c["distance_km"])
     return resultado
@@ -58,6 +64,10 @@ def main() -> None:
         print(f"  Match Cinepolis: {resultado['cinepolis_match']['name']}")
     if resultado.get("cinemex_match"):
         print(f"  Match Cinemex:   {resultado['cinemex_match']['name']}")
+    if resultado.get("cinepolis_error"):
+        print(f"  [Cinepolis fallo: {resultado['cinepolis_error']}]")
+    if resultado.get("cinemex_error"):
+        print(f"  [Cinemex fallo: {resultado['cinemex_error']}]")
     print()
 
     if not resultado["cines"]:
