@@ -10,6 +10,7 @@ al cargar la página).
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from math import radians, sin, cos, sqrt, atan2
@@ -35,14 +36,30 @@ HEADERS = {
 CACHE_PATH = Path(__file__).parent / "cache_cities.json"
 CACHE_TTL_SECONDS = 7 * 24 * 3600  # 1 semana
 
+# Relay opcional: si Cinepolis bloquea la IP de donde corre este script
+# (Cloudflare suele bloquear IPs de datacenter/cloud), se puede desviar el
+# trafico por un relay HTTP corriendo en una IP residencial. Se activa solo
+# si ambas variables de entorno estan definidas; si no, pega directo a la
+# API como siempre. El relay reenvia unicamente a api-g.cinepolis.com (no
+# es un proxy abierto) y espera el mismo body+respuesta que la API real.
+RELAY_URL = os.environ.get("CINEPOLIS_RELAY_URL", "").rstrip("/")
+RELAY_TOKEN = os.environ.get("CINEPOLIS_RELAY_TOKEN", "")
+
 
 def _graphql(path: str, operation_name: str, query: str, variables: dict) -> dict:
-    resp = requests.post(
-        f"{API_URL}{path}",
-        json={"operationName": operation_name, "variables": variables, "query": query},
-        headers=HEADERS,
-        timeout=20,
-    )
+    body = {"operationName": operation_name, "variables": variables, "query": query}
+
+    if RELAY_URL and RELAY_TOKEN:
+        resp = requests.post(
+            f"{RELAY_URL}/relay",
+            params={"path": path},
+            json=body,
+            headers={"X-Worker-Token": RELAY_TOKEN},
+            timeout=25,
+        )
+    else:
+        resp = requests.post(f"{API_URL}{path}", json=body, headers=HEADERS, timeout=20)
+
     resp.raise_for_status()
     payload = resp.json()
     if payload.get("errors"):
