@@ -32,6 +32,17 @@ por separado si solo necesitas una parte: `get_cinemas()`, `get_movies()`,
 .venv/bin/python cli.py "spider-man" --lat 19.4256 --lng -99.154789 --json
 ```
 
+Sin nombre de pelicula muestra que hay en el cine cerca ("cartelera"):
+
+```bash
+.venv/bin/python cli.py --lat 19.4256 --lng -99.154789 --fecha 2026-09-05
+```
+
+Trae todas las peliculas con horarios de los 3 cines mas cercanos de cada
+cadena (`--n` para cambiarlo). Cinemex usa 1 llamada por zona; Cinepolis 1
+por cine (`billboardByCinema`, la misma consulta que usa su sitio) + 1 para
+los nombres de las peliculas.
+
 Ver `python cli.py --help` para filtrar por cadena, fecha, o numero de cines
 cercanos a revisar.
 
@@ -58,7 +69,12 @@ Tools expuestas:
 - `buscar_horarios_cinepolis(pelicula, lat, lng, n_cines=5)`
 - `buscar_horarios_cinemex(pelicula, lat, lng, fecha=None, n_cines=5)`
 - `buscar_horarios(pelicula, lat, lng, fecha=None, n_cines=5)` — busca en
-  ambas cadenas y regresa todo junto ordenado por distancia.
+  ambas cadenas y regresa todo junto ordenado por distancia. Si una cadena
+  falla, regresa la otra y marca `cinepolis_error` / `cinemex_error`.
+- `cartelera_cercana(lat, lng, fecha=None, n_cines=3)` — que hay en el cine
+  cerca, sin nombre de pelicula (ver el modo cartelera del CLI).
+
+El paquete `mcp` requiere Python 3.10 o mas nuevo.
 
 ## Skill para OpenClaw
 
@@ -103,8 +119,13 @@ infraestructura personal, no parte de la libreria.
 - La distancia a los cines es linea recta (haversine), no tiempo de manejo.
 - La lista de cines/ciudades se cachea en disco (`cache_*.json`) por ~1
   semana para no pedirla en cada llamada.
-- Cinepolis regresa horarios de los proximos ~6 dias en una sola llamada.
-  Cinemex regresa un solo dia por llamada (`fecha`, default hoy).
+- Cinepolis regresa horarios de los proximos ~6 dias en una sola llamada
+  (una por pelicula, con todos los cines cercanos juntos).
+  Cinemex regresa un solo dia por llamada (`fecha`, default hoy en CDMX).
+- Cinepolis limita peticiones con Cloudflare: muchas llamadas seguidas dan
+  429 y bloquean la IP un rato. `cinepolis_api` reintenta con espera, pero
+  evita loops de muchas consultas (p. ej. pedir `Billboard` pelicula por
+  pelicula para armar una cartelera: usa `billboardByCinema`).
 - Solo se probo para Mexico (`country_id="MX"` / catalogo nacional de
   Cinemex).
 

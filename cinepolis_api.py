@@ -65,16 +65,21 @@ RELAY_TOKEN = os.environ.get("CINEPOLIS_RELAY_TOKEN", "")
 def _graphql(path: str, operation_name: str, query: str, variables: dict) -> dict:
     body = {"operationName": operation_name, "variables": variables, "query": query}
 
-    if RELAY_URL and RELAY_TOKEN:
-        resp = requests.post(
-            f"{RELAY_URL}/relay",
-            params={"path": path},
-            json=body,
-            headers={"X-Worker-Token": RELAY_TOKEN},
-            timeout=25,
-        )
-    else:
-        resp = requests.post(f"{API_URL}{path}", json=body, headers=HEADERS, timeout=20)
+    # Cinepolis limita peticiones (429): reintenta con espera creciente
+    for attempt in range(4):
+        if RELAY_URL and RELAY_TOKEN:
+            resp = requests.post(
+                f"{RELAY_URL}/relay",
+                params={"path": path},
+                json=body,
+                headers={"X-Worker-Token": RELAY_TOKEN},
+                timeout=25,
+            )
+        else:
+            resp = requests.post(f"{API_URL}{path}", json=body, headers=HEADERS, timeout=20)
+        if resp.status_code != 429 or attempt == 3:
+            break
+        time.sleep(2 ** (attempt + 1))
 
     resp.raise_for_status()
     payload = resp.json()
@@ -386,9 +391,36 @@ def find_showtimes_near(
     cinemas = get_cinemas(country_id=country_id)
     near = nearest_cinemas(lat, lng, cinemas, n=n_cinemas, country_id=country_id)
 
+    # una sola consulta con todos los cines cercanos (la API acepta varios
+    # separados por coma), en vez de una por cine
+    data = _graphql(
+        "/v1/billboards/graphql",
+        "Billboard",
+        BILLBOARD_QUERY,
+        {
+            "countryId": country_id,
+            "movieId": movie.id,
+            "cinemas": ",".join(c.id for c, _ in near),
+            "timezone": "America/Mexico_City",
+        },
+    )
+    by_cinema: dict[str, list[dict]] = {}
+    for schedule in (data.get("billboard") or {}).get("schedules", []):
+        for d in schedule["dates"]:
+            for lang in d["languages"]:
+                for st in lang["showtimes"]:
+                    by_cinema.setdefault(schedule["cinemaId"], []).append(
+                        {
+                            "date": d["date"],
+                            "time": st["datetime"].split("T")[1][:5],
+                            "language": lang["displayLanguage"],
+                            "format": st["format"]["name"],
+                        }
+                    )
+
     results = []
     for cinema, dist_km in near:
-        showtimes = get_showtimes(movie.id, cinema.id, timezone=cinema.timezone, country_id=country_id)
+        showtimes = by_cinema.get(cinema.id)
         if not showtimes:
             continue
         results.append(
@@ -397,15 +429,7 @@ def find_showtimes_near(
                 "cinema_id": cinema.id,
                 "city": cinema.city_name,
                 "distance_km": round(dist_km, 1),
-                "showtimes": [
-                    {
-                        "date": s.date,
-                        "time": s.datetime.split("T")[1][:5],
-                        "language": s.language,
-                        "format": s.format,
-                    }
-                    for s in showtimes
-                ],
+                "showtimes": showtimes,
             }
         )
 
@@ -414,3 +438,111 @@ def find_showtimes_near(
         "movie": {"id": movie.id, "name": movie.name},
         "cinemas": results,
     }
+
+
+# Consulta que usa cinepolis.com en la pagina de un cine: todas las
+# peliculas con horarios de ese cine (~6 dias), en una sola llamada.
+# Sacada de un HAR del sitio.
+BILLBOARD_BY_CINEMA_QUERY = """
+query Billboard($countryId: String!, $cinemaId: String!, $timezone: String!, $isOffSelectorDays: Boolean!) {
+  billboardByCinema(
+    countryId: $countryId
+    cinemaId: $cinemaId
+    timezone: $timezone
+    isOffSelectorDays: $isOffSelectorDays
+  ) {
+    dates
+    schedules {
+      cinemaId
+      movieId
+      dates {
+        date
+        languages {
+          displayLanguage
+          showtimes {
+            format { name }
+            experience { name }
+            datetime
+            screen
+            __typename
+          }
+          __typename
+        }
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+}
+"""
+
+
+def get_billboard_by_cinema(cinema: Cinema, country_id: str = "MX") -> dict:
+    data = _graphql(
+        "/v1/billboards/graphql",
+        "Billboard",
+        BILLBOARD_BY_CINEMA_QUERY,
+        {
+            "countryId": country_id,
+            "cinemaId": cinema.id,
+            "timezone": cinema.timezone or "America/Mexico_City",
+            "isOffSelectorDays": True,
+        },
+    )
+    return data.get("billboardByCinema") or {}
+
+
+def cartelera_near(
+    lat: float,
+    lng: float,
+    target_date: str,
+    n_cinemas: int = 3,
+    country_id: str = "MX",
+) -> dict[str, Any]:
+    """
+    Cartelera completa (todas las peliculas con sus horarios) de los n cines
+    Cinepolis mas cercanos a (lat, lng), para una fecha (YYYY-MM-DD).
+    No necesita nombre de pelicula. Hace 1 llamada para los nombres de las
+    peliculas + 1 por cine.
+    """
+    near = nearest_cinemas(lat, lng, get_cinemas(country_id=country_id), n=n_cinemas, country_id=country_id)
+    names = {m.id: m.name for m in get_movies(country_id=country_id)}
+
+    results = []
+    for cinema, dist_km in near:
+        billboard = get_billboard_by_cinema(cinema, country_id=country_id)
+        movies = []
+        for schedule in billboard.get("schedules", []):
+            showtimes = []
+            for d in schedule.get("dates", []):
+                if d["date"] != target_date:
+                    continue
+                for lang in d["languages"]:
+                    for st in lang["showtimes"]:
+                        fmt = st["format"]["name"]
+                        if st.get("experience") and st["experience"].get("name"):
+                            fmt = f"{fmt} {st['experience']['name']}"
+                        showtimes.append(
+                            {
+                                "time": st["datetime"].split("T")[1][:5],
+                                "language": lang["displayLanguage"],
+                                "format": fmt,
+                            }
+                        )
+            if showtimes:
+                showtimes.sort(key=lambda st: st["time"])
+                movie_id = schedule["movieId"]
+                name = names.get(movie_id) or movie_id.replace("-", " ").title()
+                movies.append({"name": name, "showtimes": showtimes})
+        results.append(
+            {
+                "cinema": cinema.name,
+                "cinema_id": cinema.id,
+                "city": cinema.city_name,
+                "distance_km": round(dist_km, 1),
+                "movies": sorted(movies, key=lambda m: m["name"]),
+            }
+        )
+
+    return {"date": target_date, "cinemas": results}

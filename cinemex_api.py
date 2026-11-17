@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import date as date_cls
+from datetime import datetime, timedelta, timezone
 from math import radians, sin, cos, sqrt, atan2
 from pathlib import Path
 from typing import Any
@@ -39,6 +39,15 @@ HEADERS = {
 
 CACHE_PATH = Path(__file__).parent / "cache_cinemex_cinemas.json"
 CACHE_TTL_SECONDS = 7 * 24 * 3600  # 1 semana
+
+
+# Mexico (CDMX) ya no tiene horario de verano: UTC-6 fijo. El servidor
+# puede estar en UTC, asi que "hoy" se calcula con esta zona.
+MX_TZ = timezone(timedelta(hours=-6))
+
+
+def today_mx() -> str:
+    return datetime.now(MX_TZ).date().isoformat()
 
 
 def _get(path: str, params: dict | None = None) -> Any:
@@ -192,7 +201,8 @@ def _extract_showtimes_for_cinema(area_data: dict, cinema_id: int, movie_id: int
                 continue
             for version in movie.get("versions", []):
                 for session in version.get("sessions", []):
-                    if session["cinema_id"] != cinema_id:
+                    # la API ya no siempre manda cinema_id en cada sesion
+                    if session.get("cinema_id", cinema_id) != cinema_id:
                         continue
                     result.append(
                         Showtime(
@@ -223,7 +233,7 @@ def find_showtimes_near(
     Cinemex mas cercanos y sus horarios para esa pelicula.
     """
     if target_date is None:
-        target_date = date_cls.today().isoformat()
+        target_date = today_mx()
 
     movies = get_movies()
     movie = find_movie(movie_query, movies)
@@ -261,3 +271,54 @@ def find_showtimes_near(
         "date": target_date,
         "cinemas": results,
     }
+
+
+def cartelera_near(
+    lat: float,
+    lng: float,
+    target_date: str | None = None,
+    n_cinemas: int = 3,
+) -> dict[str, Any]:
+    """
+    Cartelera completa (todas las peliculas con sus horarios) de los n cines
+    Cinemex mas cercanos a (lat, lng), para una fecha (YYYY-MM-DD, default hoy).
+    No necesita nombre de pelicula.
+    """
+    if target_date is None:
+        target_date = today_mx()
+
+    near = nearest_cinemas(lat, lng, get_cinemas(), n=n_cinemas)
+    area_ids = {c.area_id for c, _ in near}
+    area_data = {area_id: get_area_billboard(area_id, target_date) for area_id in area_ids}
+
+    results = []
+    for cinema, dist_km in near:
+        movies = []
+        for ac in area_data[cinema.area_id].get("cinemas", []):
+            if ac["id"] != cinema.id:
+                continue
+            for movie in ac.get("movies", []):
+                showtimes = []
+                for version in movie.get("versions", []):
+                    for session in version.get("sessions", []):
+                        if session.get("cinema_id", cinema.id) != cinema.id:
+                            continue
+                        day, hour = session["datetime"].split("T")
+                        if day != target_date:
+                            continue
+                        showtimes.append({"time": hour[:5], "version": version["label"]})
+                if showtimes:
+                    showtimes.sort(key=lambda st: st["time"])
+                    movies.append({"name": movie["name"], "showtimes": showtimes})
+        movies.sort(key=lambda m: m["name"])
+        results.append(
+            {
+                "cinema": cinema.name,
+                "cinema_id": cinema.id,
+                "area": cinema.area_name,
+                "distance_km": round(dist_km, 1),
+                "movies": movies,
+            }
+        )
+
+    return {"date": target_date, "cinemas": results}
